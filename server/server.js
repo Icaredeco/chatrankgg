@@ -3,6 +3,7 @@ import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import cors from 'cors'
 import userRoutes from './routes/users.js'
+import streamerRoutes from './routes/streamers.js'
 import http from 'http'
 import { Server } from 'socket.io'
 
@@ -30,6 +31,7 @@ app.use(cors({
 
 app.use(express.json())
 app.use('/api/users', userRoutes)
+app.use('/api', streamerRoutes)
 
 app.get('/api/statut', (req, res) => {
   res.json({ message: '✅ Backend is up!' })

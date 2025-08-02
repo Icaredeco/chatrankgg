@@ -55,7 +55,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -71,7 +71,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
     }
     total += repartition[1]
@@ -86,7 +86,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -102,7 +102,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -118,7 +118,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -134,7 +134,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -150,7 +150,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -166,7 +166,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -182,7 +182,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -198,7 +198,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }
@@ -214,7 +214,7 @@ async function seed() {
         tag: 'EUW',
         searchedAt: new Date(),
         mainRole: randomRole,
-        streamerCode: 'i_reaz'
+        streamerCode: 'testprofil'
         })
 
     }

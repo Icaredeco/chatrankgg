@@ -21,7 +21,7 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || '*'
 }))
 app.use(express.json())
-//app.use('/api/users', userRoutes)
+app.use('/api/users', userRoutes)
 
 app.get('/api/statut', (req, res) => {
   res.json({ message: '✅ Backend is up!' })

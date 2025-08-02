@@ -18,8 +18,16 @@ export const io = new Server(server, {
 })
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*'
+  origin: (origin, callback) => {
+    const allowedOrigin = process.env.FRONTEND_URL?.replace(/\/$/, '')
+    if (!origin || origin === allowedOrigin) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  }
 }))
+
 app.use(express.json())
 app.use('/api/users', userRoutes)
 

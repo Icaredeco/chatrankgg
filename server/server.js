@@ -17,9 +17,15 @@ export const io = new Server(server, {
   }
 })
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*'
+}))
 app.use(express.json())
 app.use('/api/users', userRoutes)
+
+app.get('/api/statut', (req, res) => {
+  res.json({ message: '✅ Backend is up!' })
+})
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {

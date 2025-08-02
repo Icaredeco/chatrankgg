@@ -12,7 +12,7 @@ export default function SearchForm() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/users/add', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ riotName, riotTag })

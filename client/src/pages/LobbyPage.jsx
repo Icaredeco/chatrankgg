@@ -10,7 +10,7 @@ export default function LobbyPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/users/${streamerCode}`)
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/users/${streamerCode}`)
         const data = await res.json()
         setUsers(data)
       } catch (err) {

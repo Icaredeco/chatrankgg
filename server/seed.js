@@ -15,17 +15,17 @@ const tiers = [
 const roles = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'];
 
 const repartition = [
-  220, // UNRANKED
-  140, // IRON
-  450, // BRONZE
-  340, // SILVER
-  320, // GOLD
-  160, // PLATINUM
-  102, // EMERALD
-  67, // DIAMOND
-  28, // MASTER
-  14, // GRANDMASTER
-  4, // CHALLENGER
+  2200, // UNRANKED
+  1400, // IRON
+  4500, // BRONZE
+  3400, // SILVER
+  3200, // GOLD
+  1600, // PLATINUM
+  1020, // EMERALD
+  670, // DIAMOND
+  280, // MASTER
+  140, // GRANDMASTER
+  40, // CHALLENGER
 ]
 
 const divisions = ['I', 'II', 'III', 'IV']

@@ -5,7 +5,7 @@ import {
   Sprite,
   Assets,
   Text,
-  ParticleContainer
+  ParticleContainer,
 } from 'pixi.js'
 import { Viewport } from 'pixi-viewport'
 
@@ -49,10 +49,10 @@ export default function LobbyCanvas({ users = [] }) {
       }
 
       app.ticker.maxFPS = 30
-
       container.appendChild(app.canvas)
       appRef.current = app
 
+      // Viewport
       const viewport = new Viewport({
         screenWidth: app.screen.width,
         screenHeight: app.screen.height,
@@ -109,15 +109,11 @@ export default function LobbyCanvas({ users = [] }) {
         CHALLENGER: challengerImg,
       }
 
-      // ---- textures pré-rendues + ParticleContainer (Pixi v8) ----
-
+      // ---------- v8: textures pré-rendues + ParticleContainer ----------
       const makeCircleTexture = (r, color) => {
         const g = new Graphics()
-        g.beginFill(color)
-        g.drawCircle(0, 0, r)
-        g.endFill()
-        g.x = r
-        g.y = r
+        // En v8 : dessiner dans le quadrant positif pour des bounds corrects
+        g.circle(r, r, r).fill(color)
         const tex = app.renderer.generateTexture(g)
         g.destroy(true)
         return tex
@@ -128,7 +124,6 @@ export default function LobbyCanvas({ users = [] }) {
         texByTier[tier] = makeCircleTexture(radius, color)
       }
 
-      // v8: options object (capacity + properties)
       const particlesRoot = new ParticleContainer({
         capacity: Math.max(users.length + 1000, 2000),
         properties: {
@@ -141,9 +136,9 @@ export default function LobbyCanvas({ users = [] }) {
         },
       })
       viewport.addChild(particlesRoot)
+      // ------------------------------------------------------------------
 
-      // ------------------------------------------------------------
-
+      // “Breathing” des centres
       const clusterMotion = {}
       for (const key in tierPositions) {
         const { x, y } = tierPositions[key]
@@ -158,6 +153,7 @@ export default function LobbyCanvas({ users = [] }) {
       const tierDots = {}
       const tierOffsets = {}
 
+      // Créer les dots comme Sprites (pas de Graphics, pas d’events par dot)
       for (const user of users) {
         const [tierRaw] = (user.rank || 'UNRANKED').split(' ')
         const tier = (tierRaw || 'UNRANKED').toUpperCase()
@@ -177,7 +173,6 @@ export default function LobbyCanvas({ users = [] }) {
         s.vy = 0
         s.radius = radius
 
-        // v8: addParticle (not addChild)
         particlesRoot.addParticle(s)
 
         if (!tierDots[tier]) tierDots[tier] = []
@@ -190,7 +185,6 @@ export default function LobbyCanvas({ users = [] }) {
         const imgPath = tierImgMap[tier]
         const center = tierPositions[tier]
         if (!imgPath || !center) continue
-
         const texture = await Assets.load(imgPath)
         const sprite = new Sprite(texture)
         sprite.width = 60
@@ -203,7 +197,7 @@ export default function LobbyCanvas({ users = [] }) {
         tierSprites[tier] = sprite
       }
 
-      // Label partagé (uniquement pour les emblèmes)
+      // Label partagé pour les emblèmes
       const uiLabel = new Text({
         text: '',
         style: { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' },
@@ -213,6 +207,19 @@ export default function LobbyCanvas({ users = [] }) {
       uiLabelBg.visible = false
       app.stage.addChild(uiLabelBg, uiLabel)
 
+      const drawLabelBg = () => {
+        const padding = 4
+        const b = uiLabel.getLocalBounds()
+        uiLabelBg.clear()
+        uiLabelBg.roundRect(
+          uiLabel.x - padding,
+          uiLabel.y - padding,
+          b.width + padding * 2,
+          b.height + padding * 2,
+          4
+        ).fill(0x000000, 0.7)
+      }
+
       for (const tier in tierSprites) {
         const sprite = tierSprites[tier]
         sprite.on('pointerover', (e) => {
@@ -221,37 +228,14 @@ export default function LobbyCanvas({ users = [] }) {
           uiLabel.x = x + 10
           uiLabel.y = y - 10
           uiLabel.visible = true
-
-          const padding = 4
-          const b = uiLabel.getLocalBounds()
-          uiLabelBg.clear()
-          uiLabelBg.beginFill(0x000000, 0.7)
-          uiLabelBg.drawRoundedRect(
-            uiLabel.x - padding,
-            uiLabel.y - padding,
-            b.width + padding * 2,
-            b.height + padding * 2,
-            4
-          )
-          uiLabelBg.endFill()
           uiLabelBg.visible = true
+          drawLabelBg()
         })
         sprite.on('pointermove', (e) => {
           const { x, y } = e.global
           uiLabel.x = x + 10
           uiLabel.y = y - 10
-          const padding = 4
-          const b = uiLabel.getLocalBounds()
-          uiLabelBg.clear()
-          uiLabelBg.beginFill(0x000000, 0.7)
-          uiLabelBg.drawRoundedRect(
-            uiLabel.x - padding,
-            uiLabel.y - padding,
-            b.width + padding * 2,
-            b.height + padding * 2,
-            4
-          )
-          uiLabelBg.endFill()
+          drawLabelBg()
         })
         sprite.on('pointerout', () => {
           uiLabel.visible = false
@@ -266,7 +250,7 @@ export default function LobbyCanvas({ users = [] }) {
       const damping = 0.95
 
       app.ticker.add(() => {
-        // breathing
+        // breathing des centres
         for (const key in clusterMotion) {
           const m = clusterMotion[key]
           m.angle += m.speed
@@ -277,7 +261,7 @@ export default function LobbyCanvas({ users = [] }) {
           p.y = m.baseY + oy
         }
 
-        // emblem positions
+        // placer les emblèmes au centre
         for (const tier in tierSprites) {
           const spr = tierSprites[tier]
           const c = tierPositions[tier]
@@ -285,7 +269,7 @@ export default function LobbyCanvas({ users = [] }) {
           spr.y = c.y - spr.height / 2
         }
 
-        // dots
+        // mettre à jour les dots (plus de O(n²))
         for (const tier in tierDots) {
           const arr = tierDots[tier]
           const c = tierPositions[tier]
@@ -311,6 +295,7 @@ export default function LobbyCanvas({ users = [] }) {
         }
       })
 
+      // léger “skew” comme avant
       let angle = 0
       app.ticker.add(() => {
         angle += 0.01

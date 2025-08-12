@@ -1,12 +1,5 @@
 import { useRef, useEffect } from 'react'
-import {
-  Application,
-  Graphics,
-  Sprite,
-  Assets,
-  Text,
-  Container,
-} from 'pixi.js'
+import { Application, Graphics, Sprite, Assets, Text, Circle, Texture } from 'pixi.js'
 import { Viewport } from 'pixi-viewport'
 
 // Images
@@ -22,16 +15,26 @@ import masterImg from './img/master.png'
 import grandmasterImg from './img/grandmaster.png'
 import challengerImg from './img/challenger.png'
 
+
 export default function LobbyCanvas({ users = [] }) {
   const containerRef = useRef(null)
   const appRef = useRef(null)
 
+  
+
   useEffect(() => {
     let destroyed = false
 
+    
+
     const setup = async () => {
-      const host = containerRef.current
-      if (!host) return
+      const clusterMotion = {}; 
+      
+
+      
+
+      const container = containerRef.current
+      if (!container) return
 
       const app = new Application()
       await app.init({
@@ -39,7 +42,7 @@ export default function LobbyCanvas({ users = [] }) {
         height: window.innerHeight,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
-        background: 0x0e0f13,        // ✅ couleur de fond visible
+        backgroundAlpha: 0,
         antialias: true,
       })
 
@@ -48,14 +51,10 @@ export default function LobbyCanvas({ users = [] }) {
         return
       }
 
-      // Sécurité : s'assurer qu'un stage existe
-      if (!app.stage) app.stage = new Container()
-
-      app.ticker.maxFPS = 30
-      host.appendChild(app.canvas)
+      container.appendChild(app.canvas)
       appRef.current = app
 
-      // ----- Viewport -----
+      // 🌍 Viewport scrollable
       const viewport = new Viewport({
         screenWidth: app.screen.width,
         screenHeight: app.screen.height,
@@ -63,11 +62,19 @@ export default function LobbyCanvas({ users = [] }) {
         worldHeight: 4000,
         events: app.renderer.events,
       })
-      app.stage.addChild(viewport)
-      viewport.drag().wheel().decelerate()
-      viewport.clampZoom({ minScale: 0.5, maxScale: 4 })
 
-      // ----- Config -----
+      app.stage.addChild(viewport)
+
+      viewport
+        .drag()
+        .wheel()
+        .decelerate()
+
+      viewport.clampZoom({
+        minScale: 0.5,
+        maxScale: 4,
+      })
+
       const radius = 2
       const exclusionRadius = 45
 
@@ -99,6 +106,7 @@ export default function LobbyCanvas({ users = [] }) {
         CHALLENGER: { x: 1150, y: 500 },
       }
 
+
       const tierImgMap = {
         UNRANKED: unrankedImg,
         IRON: ironImg,
@@ -113,30 +121,27 @@ export default function LobbyCanvas({ users = [] }) {
         CHALLENGER: challengerImg,
       }
 
-      // ---------- v8: texture de point pré-rendu ----------
-      const makeCircleTexture = (r, color) => {
-        const g = new Graphics()
-        // Important : dessiner en coordonnées positives pour des bounds valides
-        g.circle(r, r, r).fill({ color })
-        const tex = app.renderer.generateTexture(g)
-        g.destroy(true)
-        return tex
+      const tierDots = {}
+      const tiers = {
+        UNRANKED: 1,
+        IRON: 1,
+        BRONZE: 1,
+        SILVER: 1,
+        GOLD: 1,
+        PLATINUM: 1,
+        EMERALD: 1,
+        DIAMOND: 1,
+        MASTER: 1,
+        GRANDMASTER: 1,
+        CHALLENGER: 1,
       }
+      const tierOffsets = {}
 
-      const texByTier = {}
-      for (const [tier, color] of Object.entries(tierColors)) {
-        texByTier[tier] = makeCircleTexture(radius, color)
-      }
+    
 
-      // ---------- Layers ----------
-      const dotsLayer = new Container()   // ✅ simple Container pour assurer l’affichage
-      const emblemLayer = new Container()
-      viewport.addChild(dotsLayer)
-      viewport.addChild(emblemLayer)
 
-      // ---------- Breathing des centres ----------
-      const clusterMotion = {}
-      for (const key in tierPositions) {
+
+    for (const key in tierPositions) {
         const { x, y } = tierPositions[key]
         clusterMotion[key] = {
           baseX: x,
@@ -146,167 +151,293 @@ export default function LobbyCanvas({ users = [] }) {
         }
       }
 
-      const tierDots = {}
-      const tierOffsets = {}
+    const tierSprites = {};
 
-      // ---------- Création des dots (Sprites) ----------
-      let created = 0
       for (const user of users) {
-        const [tierRaw] = (user.rank || 'UNRANKED').split(' ')
-        const tier = (tierRaw || 'UNRANKED').toUpperCase()
-        const center = tierPositions[tier] || { x: 500, y: 500 }
+        const [tier, roman] = user.rank.split(' ')
+        const upperTier = tier?.toUpperCase()
+        const color = tierColors[upperTier] || 0xffffff
+        const center = tierPositions[upperTier] || { x: 500, y: 500 }
 
-        if (!tierOffsets[tier]) tierOffsets[tier] = 0
-        tierOffsets[tier]++
-
+        if (!tierOffsets[upperTier]) tierOffsets[upperTier] = 0
+        const offset = tierOffsets[upperTier]++
         const angle = Math.random() * Math.PI * 2
-        const spawnR = exclusionRadius + 30 + Math.random() * 30
+        const radiusSpawn = exclusionRadius + 30 + Math.random() * 30
 
-        const s = new Sprite(texByTier[tier] || texByTier.UNRANKED)
-        // ⚠️ Sur un Container normal, l’ancre fonctionne
-        s.anchor.set(0.5)
-        s.x = center.x + Math.cos(angle) * spawnR
-        s.y = center.y + Math.sin(angle) * spawnR
-        s.vx = 0
-        s.vy = 0
+        const x = center.x + Math.cos(angle) * radiusSpawn
+        const y = center.y + Math.sin(angle) * radiusSpawn
 
-        dotsLayer.addChild(s)
-        created++
+        const label = new Text({
+          text: '',
+          style: {
+            fontSize: 12,
+            fill: 0x000000,
+            padding: 4,
+          },
+        })
+        label.visible = false
+        label.zIndex = 3
 
-        if (!tierDots[tier]) tierDots[tier] = []
-        tierDots[tier].push({ dot: s, center })
-      }
-      console.log('Dots created:', created)
+        const labelBg = new Graphics();
+        labelBg.visible = false;
+        labelBg.zIndex = 2;
 
-      // ---------- Emblèmes ----------
-      const tierSprites = {}
-      for (const tier in tierImgMap) {
-        const imgPath = tierImgMap[tier]
-        const center = tierPositions[tier]
-        if (!imgPath || !center) continue
+        app.stage.interactive = true
 
-        const texture = await Assets.load(imgPath)
-        const sprite = new Sprite(texture)
-        sprite.width = 60
-        sprite.height = 60
-        sprite.x = center.x - sprite.width / 2
-        sprite.y = center.y - sprite.height / 2
-        sprite.eventMode = 'static'
-        sprite.cursor = 'pointer'
-        emblemLayer.addChild(sprite)
-        tierSprites[tier] = sprite
-      }
+        app.stage.addChild(labelBg)
+        app.stage.addChild(label)
 
-      // ---------- Label partagé pour les emblèmes ----------
-      const uiLabel = new Text({
-        text: '',
-        style: { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' },
-      })
-      const uiLabelBg = new Graphics()
-      uiLabel.visible = false
-      uiLabelBg.visible = false
-      app.stage.addChild(uiLabelBg, uiLabel)
+        const dot = new Graphics()
+        dot.beginFill(color)
+        dot.drawCircle(0, 0, radius)
+        dot.endFill()
 
-      const drawLabelBg = () => {
-        const padding = 4
-        const b = uiLabel.getLocalBounds()
-        uiLabelBg.clear()
-        uiLabelBg
-          .roundRect(
-            uiLabel.x - padding,
-            uiLabel.y - padding,
-            b.width + padding * 2,
-            b.height + padding * 2,
+        dot.x = x
+        dot.y = y
+        dot.vx = 0
+        dot.vy = 0
+        dot.radius = radius
+
+        dot.hitArea = new Circle(0, 0, 4);
+
+        dot.eventMode = 'static'
+        dot.cursor = 'pointer'
+
+        dot.on('pointerover', (event) => {
+          label.text = `${user.summonerName}#${user.tag}\n(main ${user.mainRole})`
+          label.visible = true
+          labelBg.visible = true
+
+          const { x, y } = event.global
+          label.x = x + 10
+          label.y = y - 10
+
+            const padding = 4;
+            const metrics = label.getLocalBounds();
+
+            labelBg.clear();
+            labelBg.beginFill(0xFFFFFF, 0.8);
+            labelBg.drawRoundedRect(
+                label.x - padding,
+                label.y - padding,
+                metrics.width + padding * 2,
+                metrics.height + padding * 2,
+                4
+            );
+            labelBg.endFill();
+
+          dot.clear()
+          dot.beginFill(color)
+          dot.drawCircle(0, 0, 12)
+          dot.endFill()
+          dot.radius = 12
+        })
+
+        dot.on('pointermove', (event) => {
+          const { x, y } = event.global
+          label.x = x + 10
+          label.y = y - 10
+
+          const padding = 4;
+          const metrics = label.getLocalBounds();
+
+          labelBg.clear();
+          labelBg.beginFill(0xFFFFFF, 0.8);
+          labelBg.drawRoundedRect(
+            label.x - padding,
+            label.y - padding,
+            metrics.width + padding * 2,
+            metrics.height + padding * 2,
             4
-          )
-          .fill({ color: 0x000000, alpha: 0.7 })
+          );
+          labelBg.endFill();
+        })
+
+        dot.on('pointerout', () => {
+          label.visible = false
+          labelBg.visible = false
+
+          dot.clear()
+          dot.beginFill(color)
+          dot.drawCircle(0, 0, radius)
+          dot.endFill()
+          dot.radius = radius
+
+          dot.off('pointermove')
+        })
+
+        viewport.addChild(dot)
+
+        if (!tierDots[upperTier]) tierDots[upperTier] = []
+        tierDots[upperTier].push({ dot, center })
       }
+        for (const tier in tiers) {
+          
+            const imgPath = tierImgMap[tier]
+            const center = tierPositions[tier]
 
-      for (const tier in tierSprites) {
-        const sprite = tierSprites[tier]
-        sprite.on('pointerover', (e) => {
-          const { x, y } = e.global
-          uiLabel.text = tier
-          uiLabel.x = x + 10
-          uiLabel.y = y - 10
-          uiLabel.visible = true
-          uiLabelBg.visible = true
-          drawLabelBg()
-        })
-        sprite.on('pointermove', (e) => {
-          const { x, y } = e.global
-          uiLabel.x = x + 10
-          uiLabel.y = y - 10
-          drawLabelBg()
-        })
-        sprite.on('pointerout', () => {
-          uiLabel.visible = false
-          uiLabelBg.visible = false
-        })
-      }
+            if (imgPath && center) {
+                const texture = await Assets.load(imgPath)
+                const sprite = new Sprite(texture)
+                sprite.width = 60
+                sprite.height = 60
 
-      // ---------- Animation ----------
-      const attraction = 0.01
-      const repulsion = 0.2
-      const targetR = exclusionRadius
-      const damping = 0.95
+                    sprite.x = center.x - sprite.width / 2
+                    sprite.y = center.y - sprite.height / 2
+                    sprite.zIndex = 1
+                    sprite.eventMode = 'static'
+                    sprite.cursor = 'pointer'
 
+                    // Label texte
+                    const label = new Text({
+                        text: tier,
+                        style: {
+                            fontSize: 14,
+                            fill: 0xffffff,
+                            fontWeight: 'bold',
+                        },
+                    })
+                    label.visible = false
+                    label.zIndex = 10
+
+                    const labelBg = new Graphics()
+                    labelBg.visible = false
+                    labelBg.zIndex = 9
+
+                    app.stage.addChild(labelBg)
+                    app.stage.addChild(label)
+
+                    sprite.on('pointerover', (event) => {
+                        const { x, y } = event.global
+                        label.text = tier
+                        label.x = x + 10
+                        label.y = y - 10
+                        label.visible = true
+
+                        const padding = 4
+                        const bounds = label.getLocalBounds()
+                        labelBg.clear()
+                        labelBg.beginFill(0x000000, 0.7)
+                        labelBg.drawRoundedRect(
+                            label.x - padding,
+                            label.y - padding,
+                            bounds.width + padding * 2,
+                            bounds.height + padding * 2,
+                            4
+                        )
+                        labelBg.endFill()
+                        labelBg.visible = true
+                    })
+
+                    sprite.on('pointermove', (event) => {
+                        const { x, y } = event.global
+                        label.x = x + 10
+                        label.y = y - 10
+
+                        const padding = 4
+                        const bounds = label.getLocalBounds()
+                        labelBg.clear()
+                        labelBg.beginFill(0x000000, 0.7)
+                        labelBg.drawRoundedRect(
+                            label.x - padding,
+                            label.y - padding,
+                            bounds.width + padding * 2,
+                            bounds.height + padding * 2,
+                            4
+                        )
+                        labelBg.endFill()
+                    })
+
+                    sprite.on('pointerout', () => {
+                        label.visible = false
+                        labelBg.visible = false
+                    })
+
+
+
+                viewport.addChild(sprite)
+                tierSprites[tier] = sprite;
+            }
+        }
+
+      // 🎯 Animation des dots
       app.ticker.add(() => {
-        // breathing centres
         for (const key in clusterMotion) {
-          const m = clusterMotion[key]
-          m.angle += m.speed
-          const ox = Math.cos(m.angle) * 10
-          const oy = Math.sin(m.angle * 0.8) * 10
-          const p = tierPositions[key]
-          p.x = m.baseX + ox
-          p.y = m.baseY + oy
+            const motion = clusterMotion[key];
+            motion.angle += motion.speed;
+
+            const offsetX = Math.cos(motion.angle) * 10;
+            const offsetY = Math.sin(motion.angle * 0.8) * 10;
+
+            const pos = tierPositions[key]
+          if (!pos) continue
+
+            pos.x = motion.baseX + offsetX;
+            pos.y = motion.baseY + offsetY;
         }
 
-        // follow centres for emblems
         for (const tier in tierSprites) {
-          const spr = tierSprites[tier]
-          const c = tierPositions[tier]
-          spr.x = c.x - spr.width / 2
-          spr.y = c.y - spr.height / 2
+            const sprite = tierSprites[tier];
+            const center = tierPositions[tier]
+
+            sprite.x = center.x - sprite.width / 2;
+            sprite.y = center.y - sprite.height / 2;
         }
 
-        // dots → simple spring to ring (plus de O(n²))
         for (const tier in tierDots) {
-          const arr = tierDots[tier]
-          const c = tierPositions[tier]
-          for (let i = 0; i < arr.length; i++) {
-            const d = arr[i].dot
-            const dx = c.x - d.x
-            const dy = c.y - d.y
-            const dist = Math.hypot(dx, dy) || 1
+          for (const { dot, center } of tierDots[tier]) {
+            const dx = center.x - dot.x
+            const dy = center.y - dot.y
+            const dist = Math.hypot(dx, dy)
 
-            if (dist > targetR + 5) {
-              d.vx += (dx / dist) * attraction
-              d.vy += (dy / dist) * attraction
-            } else if (dist < targetR) {
-              d.vx -= (dx / dist) * repulsion
-              d.vy -= (dy / dist) * repulsion
+            const attraction = 0.01
+            const repulsion = 0.2
+            const minDist = exclusionRadius
+
+            if (dist > minDist + 5) {
+              dot.vx += (dx / dist) * attraction
+              dot.vy += (dy / dist) * attraction
+            } else if (dist < minDist) {
+              dot.vx -= (dx / dist) * repulsion
+              dot.vy -= (dy / dist) * repulsion
             }
 
-            d.vx *= damping
-            d.vy *= damping
-            d.x += d.vx
-            d.y += d.vy
+            for (const other of tierDots[tier]) {
+              if (other.dot === dot) continue
+              const ox = other.dot.x - dot.x
+              const oy = other.dot.y - dot.y
+              const odist = Math.hypot(ox, oy)
+              const minDist = dot.radius + other.dot.radius
+
+              if (odist < minDist && odist > 0) {
+                const force = 0.15
+                dot.vx -= (ox / odist) * force
+                dot.vy -= (oy / odist) * force
+              }
+            }
+
+            dot.vx *= 0.95
+            dot.vy *= 0.95
+            dot.x += dot.vx
+            dot.y += dot.vy
           }
         }
       })
 
-      // petit skew esthétique
-      let a = 0
-      app.ticker.add(() => {
-        a += 0.01
-        const dx = Math.cos(a) * 0.01
-        const dy = Math.sin(a) * 0.01
-        viewport.skew.set(dx, dy)
-      })
+        let angle = 0;
 
-      return () => {}
+        app.ticker.add(() => {
+            angle += 0.01; // vitesse du mouvement
+
+            const dx = Math.cos(angle) * 0.01;
+            const dy = Math.sin(angle) * 0.01;
+            viewport.skew.set(dx, dy);
+
+        });
+
+
+      return () => {
+      }
     }
 
     setup()
@@ -317,7 +448,7 @@ export default function LobbyCanvas({ users = [] }) {
         appRef.current.destroy(true, { children: true })
         appRef.current = null
       }
-    }
+    } 
   }, [users])
 
   return <div ref={containerRef} style={{ width: '100vw', height: '100vh', overflow: 'hidden' }} />

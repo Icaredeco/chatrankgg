@@ -6,6 +6,7 @@ import {
   Assets,
   Text,
   ParticleContainer,
+  Container, // ensure we can create a stage if needed
 } from 'pixi.js'
 import { Viewport } from 'pixi-viewport'
 
@@ -30,8 +31,8 @@ export default function LobbyCanvas({ users = [] }) {
     let destroyed = false
 
     const setup = async () => {
-      const container = containerRef.current
-      if (!container) return
+      const host = containerRef.current
+      if (!host) return
 
       const app = new Application()
       await app.init({
@@ -48,22 +49,16 @@ export default function LobbyCanvas({ users = [] }) {
         return
       }
 
+      // Safety: in Pixi v8, Application SHOULD create a stage, but in case it’s null:
+      if (!app.stage) app.stage = new Container()
+
       app.ticker.maxFPS = 30
-      container.appendChild(app.canvas)
+      host.appendChild(app.canvas)
       appRef.current = app
 
-      // Viewport
-      const viewport = new Viewport({
-        screenWidth: app.screen.width,
-        screenHeight: app.screen.height,
-        worldWidth: 4000,
-        worldHeight: 4000,
-        events: app.renderer.events,
-      })
-      app.stage.addChild(viewport)
-      viewport.drag().wheel().decelerate()
-      viewport.clampZoom({ minScale: 0.5, maxScale: 4 })
-
+      // ---- World / config ----
+      const WORLD_W = 4000
+      const WORLD_H = 4000
       const radius = 2
       const exclusionRadius = 45
 
@@ -109,11 +104,40 @@ export default function LobbyCanvas({ users = [] }) {
         CHALLENGER: challengerImg,
       }
 
-      // ---------- v8: textures pré-rendues + ParticleContainer ----------
+      // ---- Viewport (defensive) ----
+      let viewport = null
+      try {
+        viewport = new Viewport({
+          screenWidth: app.screen.width,
+          screenHeight: app.screen.height,
+          worldWidth: WORLD_W,
+          worldHeight: WORLD_H,
+          events: app.renderer.events,
+        })
+      } catch (e) {
+        console.error('Viewport init error:', e)
+      }
+
+      if (!viewport) {
+        // Hard fallback: draw directly to stage (still functional)
+        viewport = new Container()
+      }
+
+      // Ensure stage exists before addChild
+      if (!app.stage) app.stage = new Container()
+      app.stage.addChild(viewport)
+
+      // Only enable interactions if it’s a real Viewport
+      if (viewport instanceof Viewport) {
+        viewport.drag().wheel().decelerate()
+        viewport.clampZoom({ minScale: 0.5, maxScale: 4 })
+      }
+
+      // ---------- v8: pre-rendered dot textures ----------
       const makeCircleTexture = (r, color) => {
         const g = new Graphics()
-        // En v8 : dessiner dans le quadrant positif pour des bounds corrects
-        g.circle(r, r, r).fill(color)
+        // draw in positive space for correct bounds
+        g.circle(r, r, r).fill({ color })
         const tex = app.renderer.generateTexture(g)
         g.destroy(true)
         return tex
@@ -124,6 +148,7 @@ export default function LobbyCanvas({ users = [] }) {
         texByTier[tier] = makeCircleTexture(radius, color)
       }
 
+      // Particle container (v8 signature) — place INSIDE viewport/container
       const particlesRoot = new ParticleContainer({
         capacity: Math.max(users.length + 1000, 2000),
         properties: {
@@ -135,10 +160,15 @@ export default function LobbyCanvas({ users = [] }) {
           alpha: false,
         },
       })
-      viewport.addChild(particlesRoot)
-      // ------------------------------------------------------------------
+      // If viewport is a plain Container (fallback), addParticle still works
+      if (viewport && 'addChild' in viewport) {
+        viewport.addChild(particlesRoot)
+      } else {
+        // extreme fallback: add to stage
+        app.stage.addChild(particlesRoot)
+      }
 
-      // “Breathing” des centres
+      // ---------- breathing of centers ----------
       const clusterMotion = {}
       for (const key in tierPositions) {
         const { x, y } = tierPositions[key]
@@ -153,7 +183,7 @@ export default function LobbyCanvas({ users = [] }) {
       const tierDots = {}
       const tierOffsets = {}
 
-      // Créer les dots comme Sprites (pas de Graphics, pas d’events par dot)
+      // Create dot sprites (NO Graphics, NO per-dot events)
       for (const user of users) {
         const [tierRaw] = (user.rank || 'UNRANKED').split(' ')
         const tier = (tierRaw || 'UNRANKED').toUpperCase()
@@ -179,12 +209,13 @@ export default function LobbyCanvas({ users = [] }) {
         tierDots[tier].push({ dot: s, center })
       }
 
-      // Emblèmes de tiers
+      // Tier emblem sprites
       const tierSprites = {}
       for (const tier in tierImgMap) {
         const imgPath = tierImgMap[tier]
         const center = tierPositions[tier]
         if (!imgPath || !center) continue
+
         const texture = await Assets.load(imgPath)
         const sprite = new Sprite(texture)
         sprite.width = 60
@@ -193,11 +224,16 @@ export default function LobbyCanvas({ users = [] }) {
         sprite.y = center.y - sprite.height / 2
         sprite.eventMode = 'static'
         sprite.cursor = 'pointer'
-        viewport.addChild(sprite)
+
+        if (viewport && 'addChild' in viewport) {
+          viewport.addChild(sprite)
+        } else {
+          app.stage.addChild(sprite)
+        }
         tierSprites[tier] = sprite
       }
 
-      // Label partagé pour les emblèmes
+      // Shared label for emblems (v8 fill)
       const uiLabel = new Text({
         text: '',
         style: { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' },
@@ -211,13 +247,15 @@ export default function LobbyCanvas({ users = [] }) {
         const padding = 4
         const b = uiLabel.getLocalBounds()
         uiLabelBg.clear()
-        uiLabelBg.roundRect(
-          uiLabel.x - padding,
-          uiLabel.y - padding,
-          b.width + padding * 2,
-          b.height + padding * 2,
-          4
-        ).fill(0x000000, 0.7)
+        uiLabelBg
+          .roundRect(
+            uiLabel.x - padding,
+            uiLabel.y - padding,
+            b.width + padding * 2,
+            b.height + padding * 2,
+            4
+          )
+          .fill({ color: 0x000000, alpha: 0.7 })
       }
 
       for (const tier in tierSprites) {
@@ -243,14 +281,14 @@ export default function LobbyCanvas({ users = [] }) {
         })
       }
 
-      // Animation
+      // ---- Animation (no O(n²) collisions) ----
       const attraction = 0.01
       const repulsion = 0.2
       const targetR = exclusionRadius
       const damping = 0.95
 
       app.ticker.add(() => {
-        // breathing des centres
+        // breathing centers
         for (const key in clusterMotion) {
           const m = clusterMotion[key]
           m.angle += m.speed
@@ -261,7 +299,7 @@ export default function LobbyCanvas({ users = [] }) {
           p.y = m.baseY + oy
         }
 
-        // placer les emblèmes au centre
+        // emblem positions
         for (const tier in tierSprites) {
           const spr = tierSprites[tier]
           const c = tierPositions[tier]
@@ -269,7 +307,7 @@ export default function LobbyCanvas({ users = [] }) {
           spr.y = c.y - spr.height / 2
         }
 
-        // mettre à jour les dots (plus de O(n²))
+        // dots update
         for (const tier in tierDots) {
           const arr = tierDots[tier]
           const c = tierPositions[tier]
@@ -295,13 +333,15 @@ export default function LobbyCanvas({ users = [] }) {
         }
       })
 
-      // léger “skew” comme avant
-      let angle = 0
+      // subtle skew
+      let skewA = 0
       app.ticker.add(() => {
-        angle += 0.01
-        const dx = Math.cos(angle) * 0.01
-        const dy = Math.sin(angle) * 0.01
-        viewport.skew.set(dx, dy)
+        skewA += 0.01
+        const dx = Math.cos(skewA) * 0.01
+        const dy = Math.sin(skewA) * 0.01
+        if (viewport && 'skew' in viewport) {
+          viewport.skew.set(dx, dy)
+        }
       })
 
       return () => {}

@@ -48,13 +48,11 @@ export default function LobbyCanvas({ users = [] }) {
         return
       }
 
-      // cap FPS to save CPU/GPU
       app.ticker.maxFPS = 30
 
       container.appendChild(app.canvas)
       appRef.current = app
 
-      // Viewport (pan/zoom)
       const viewport = new Viewport({
         screenWidth: app.screen.width,
         screenHeight: app.screen.height,
@@ -66,9 +64,8 @@ export default function LobbyCanvas({ users = [] }) {
       viewport.drag().wheel().decelerate()
       viewport.clampZoom({ minScale: 0.5, maxScale: 4 })
 
-      // ---- config ----
       const radius = 2
-      const exclusionRadius = 45 // “ring” radius around each tier center
+      const exclusionRadius = 45
 
       const tierColors = {
         IRON: 0x6e6e6e,
@@ -112,14 +109,13 @@ export default function LobbyCanvas({ users = [] }) {
         CHALLENGER: challengerImg,
       }
 
-      // ---- STEP 1: pre-rendered textures + ParticleContainer ----
+      // ---- textures pré-rendues + ParticleContainer (Pixi v8) ----
 
       const makeCircleTexture = (r, color) => {
         const g = new Graphics()
         g.beginFill(color)
         g.drawCircle(0, 0, r)
         g.endFill()
-        // offset to avoid cropping when generating texture
         g.x = r
         g.y = r
         const tex = app.renderer.generateTexture(g)
@@ -132,18 +128,21 @@ export default function LobbyCanvas({ users = [] }) {
         texByTier[tier] = makeCircleTexture(radius, color)
       }
 
-      // one batched container for ALL dots
-      const particlesRoot = new ParticleContainer(
-        Math.max(users.length, 1000),
-        {
+      // v8: options object (capacity + properties)
+      const particlesRoot = new ParticleContainer({
+        capacity: Math.max(users.length + 1000, 2000),
+        properties: {
           position: true,
-          // leave others false to maximize batching
-          rotation: false, scale: false, uvs: false, tint: false
-        }
-      )
+          rotation: false,
+          scale: false,
+          uvs: false,
+          tint: false,
+          alpha: false,
+        },
+      })
       viewport.addChild(particlesRoot)
 
-      // ----------------------------------------------------------
+      // ------------------------------------------------------------
 
       const clusterMotion = {}
       for (const key in tierPositions) {
@@ -159,7 +158,6 @@ export default function LobbyCanvas({ users = [] }) {
       const tierDots = {}
       const tierOffsets = {}
 
-      // Create dot sprites (NO per-dot Graphics, NO per-dot events)
       for (const user of users) {
         const [tierRaw] = (user.rank || 'UNRANKED').split(' ')
         const tier = (tierRaw || 'UNRANKED').toUpperCase()
@@ -175,18 +173,18 @@ export default function LobbyCanvas({ users = [] }) {
         s.anchor.set(0.5)
         s.x = center.x + Math.cos(angle) * spawnR
         s.y = center.y + Math.sin(angle) * spawnR
-        // custom velocity fields
         s.vx = 0
         s.vy = 0
         s.radius = radius
 
-        particlesRoot.addChild(s)
+        // v8: addParticle (not addChild)
+        particlesRoot.addParticle(s)
 
         if (!tierDots[tier]) tierDots[tier] = []
         tierDots[tier].push({ dot: s, center })
       }
 
-      // Tier emblem sprites (hover labels kept for emblems only)
+      // Emblèmes de tiers
       const tierSprites = {}
       for (const tier in tierImgMap) {
         const imgPath = tierImgMap[tier]
@@ -205,7 +203,7 @@ export default function LobbyCanvas({ users = [] }) {
         tierSprites[tier] = sprite
       }
 
-      // Shared label (no per-dot label allocations)
+      // Label partagé (uniquement pour les emblèmes)
       const uiLabel = new Text({
         text: '',
         style: { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' },
@@ -215,7 +213,6 @@ export default function LobbyCanvas({ users = [] }) {
       uiLabelBg.visible = false
       app.stage.addChild(uiLabelBg, uiLabel)
 
-      // Emblem hover (kept because it’s few sprites)
       for (const tier in tierSprites) {
         const sprite = tierSprites[tier]
         sprite.on('pointerover', (e) => {
@@ -262,26 +259,25 @@ export default function LobbyCanvas({ users = [] }) {
         })
       }
 
-      // ---- Animation: breathing + simple spring to center ring (no O(n²)) ----
+      // Animation
       const attraction = 0.01
       const repulsion = 0.2
       const targetR = exclusionRadius
       const damping = 0.95
 
-      // light “breathing” centers
       app.ticker.add(() => {
+        // breathing
         for (const key in clusterMotion) {
           const m = clusterMotion[key]
           m.angle += m.speed
           const ox = Math.cos(m.angle) * 10
           const oy = Math.sin(m.angle * 0.8) * 10
           const p = tierPositions[key]
-          if (!p) continue
           p.x = m.baseX + ox
           p.y = m.baseY + oy
         }
 
-        // move emblems to their centers
+        // emblem positions
         for (const tier in tierSprites) {
           const spr = tierSprites[tier]
           const c = tierPositions[tier]
@@ -289,7 +285,7 @@ export default function LobbyCanvas({ users = [] }) {
           spr.y = c.y - spr.height / 2
         }
 
-        // update dots — no pairwise checks, only relation to its tier center
+        // dots
         for (const tier in tierDots) {
           const arr = tierDots[tier]
           const c = tierPositions[tier]
@@ -315,7 +311,6 @@ export default function LobbyCanvas({ users = [] }) {
         }
       })
 
-      // small viewport skew just like you had
       let angle = 0
       app.ticker.add(() => {
         angle += 0.01

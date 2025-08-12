@@ -1,5 +1,12 @@
 import { useRef, useEffect } from 'react'
-import { Application, Graphics, Sprite, Assets, Text, Circle, ParticleContainer } from 'pixi.js'
+import {
+  Application,
+  Graphics,
+  Sprite,
+  Assets,
+  Text,
+  ParticleContainer
+} from 'pixi.js'
 import { Viewport } from 'pixi-viewport'
 
 // Images
@@ -23,8 +30,6 @@ export default function LobbyCanvas({ users = [] }) {
     let destroyed = false
 
     const setup = async () => {
-      const clusterMotion = {}
-
       const container = containerRef.current
       if (!container) return
 
@@ -43,13 +48,13 @@ export default function LobbyCanvas({ users = [] }) {
         return
       }
 
-      // Optional: réduire la conso CPU/GPU
+      // cap FPS to save CPU/GPU
       app.ticker.maxFPS = 30
 
       container.appendChild(app.canvas)
       appRef.current = app
 
-      // 🌍 Viewport scroll/zoom
+      // Viewport (pan/zoom)
       const viewport = new Viewport({
         screenWidth: app.screen.width,
         screenHeight: app.screen.height,
@@ -61,8 +66,9 @@ export default function LobbyCanvas({ users = [] }) {
       viewport.drag().wheel().decelerate()
       viewport.clampZoom({ minScale: 0.5, maxScale: 4 })
 
+      // ---- config ----
       const radius = 2
-      const exclusionRadius = 45
+      const exclusionRadius = 45 // “ring” radius around each tier center
 
       const tierColors = {
         IRON: 0x6e6e6e,
@@ -106,15 +112,14 @@ export default function LobbyCanvas({ users = [] }) {
         CHALLENGER: challengerImg,
       }
 
-      // ========= STEP 1: textures pré-rendues + ParticleContainer =========
+      // ---- STEP 1: pre-rendered textures + ParticleContainer ----
 
-      // Petit helper pour générer une texture de disque coloré
       const makeCircleTexture = (r, color) => {
         const g = new Graphics()
         g.beginFill(color)
         g.drawCircle(0, 0, r)
         g.endFill()
-        // éviter le crop lors de generateTexture
+        // offset to avoid cropping when generating texture
         g.x = r
         g.y = r
         const tex = app.renderer.generateTexture(g)
@@ -122,29 +127,25 @@ export default function LobbyCanvas({ users = [] }) {
         return tex
       }
 
-      // Une texture par tier
       const texByTier = {}
       for (const [tier, color] of Object.entries(tierColors)) {
         texByTier[tier] = makeCircleTexture(radius, color)
       }
 
-      // Un seul container de particules pour tous les points (ultra batché)
+      // one batched container for ALL dots
       const particlesRoot = new ParticleContainer(
         Math.max(users.length, 1000),
-        { position: true } // +options si besoin (rotation/scale/alpha/tint)
+        {
+          position: true,
+          // leave others false to maximize batching
+          rotation: false, scale: false, uvs: false, tint: false
+        }
       )
       viewport.addChild(particlesRoot)
 
-      // ===================================================================
+      // ----------------------------------------------------------
 
-      const tierDots = {}
-      const tierOffsets = {}
-      const tiers = {
-        UNRANKED: 1, IRON: 1, BRONZE: 1, SILVER: 1, GOLD: 1,
-        PLATINUM: 1, EMERALD: 1, DIAMOND: 1, MASTER: 1, GRANDMASTER: 1, CHALLENGER: 1,
-      }
-
-      // Mouvement “breathing” des centres
+      const clusterMotion = {}
       for (const key in tierPositions) {
         const { x, y } = tierPositions[key]
         clusterMotion[key] = {
@@ -155,102 +156,172 @@ export default function LobbyCanvas({ users = [] }) {
         }
       }
 
-      // Créer les DOTS en SPRITES (pas de Graphics, pas d’événements par dot)
-      for (const user of users) {
-        const [tier] = (user.rank || 'UNRANKED').split(' ')
-        const upperTier = (tier || 'UNRANKED').toUpperCase()
-        const center = tierPositions[upperTier] || { x: 500, y: 500 }
+      const tierDots = {}
+      const tierOffsets = {}
 
-        if (!tierOffsets[upperTier]) tierOffsets[upperTier] = 0
-        tierOffsets[upperTier]++
+      // Create dot sprites (NO per-dot Graphics, NO per-dot events)
+      for (const user of users) {
+        const [tierRaw] = (user.rank || 'UNRANKED').split(' ')
+        const tier = (tierRaw || 'UNRANKED').toUpperCase()
+        const center = tierPositions[tier] || { x: 500, y: 500 }
+
+        if (!tierOffsets[tier]) tierOffsets[tier] = 0
+        tierOffsets[tier]++
 
         const angle = Math.random() * Math.PI * 2
-        const radiusSpawn = exclusionRadius + 30 + Math.random() * 30
+        const spawnR = exclusionRadius + 30 + Math.random() * 30
 
-        const sprite = new Sprite(texByTier[upperTier] || texByTier.UNRANKED)
-        sprite.anchor.set(0.5)
-        sprite.x = center.x + Math.cos(angle) * radiusSpawn
-        sprite.y = center.y + Math.sin(angle) * radiusSpawn
+        const s = new Sprite(texByTier[tier] || texByTier.UNRANKED)
+        s.anchor.set(0.5)
+        s.x = center.x + Math.cos(angle) * spawnR
+        s.y = center.y + Math.sin(angle) * spawnR
+        // custom velocity fields
+        s.vx = 0
+        s.vy = 0
+        s.radius = radius
 
-        // props “physiques” custom
-        sprite.vx = 0
-        sprite.vy = 0
-        sprite.radius = radius
+        particlesRoot.addChild(s)
 
-        particlesRoot.addChild(sprite)
-
-        if (!tierDots[upperTier]) tierDots[upperTier] = []
-        tierDots[upperTier].push({ dot: sprite, center })
+        if (!tierDots[tier]) tierDots[tier] = []
+        tierDots[tier].push({ dot: s, center })
       }
 
-      // Emblèmes de tiers (inchangé)
+      // Tier emblem sprites (hover labels kept for emblems only)
       const tierSprites = {}
-      for (const tier in tiers) {
+      for (const tier in tierImgMap) {
         const imgPath = tierImgMap[tier]
         const center = tierPositions[tier]
-        if (imgPath && center) {
-          const texture = await Assets.load(imgPath)
-          const sprite = new Sprite(texture)
-          sprite.width = 60
-          sprite.height = 60
-          sprite.x = center.x - sprite.width / 2
-          sprite.y = center.y - sprite.height / 2
-          viewport.addChild(sprite)
-          tierSprites[tier] = sprite
-        }
+        if (!imgPath || !center) continue
+
+        const texture = await Assets.load(imgPath)
+        const sprite = new Sprite(texture)
+        sprite.width = 60
+        sprite.height = 60
+        sprite.x = center.x - sprite.width / 2
+        sprite.y = center.y - sprite.height / 2
+        sprite.eventMode = 'static'
+        sprite.cursor = 'pointer'
+        viewport.addChild(sprite)
+        tierSprites[tier] = sprite
       }
 
-      // 🎯 Animation (physique simple + breathing des centres)
+      // Shared label (no per-dot label allocations)
+      const uiLabel = new Text({
+        text: '',
+        style: { fontSize: 14, fill: 0xffffff, fontWeight: 'bold' },
+      })
+      const uiLabelBg = new Graphics()
+      uiLabel.visible = false
+      uiLabelBg.visible = false
+      app.stage.addChild(uiLabelBg, uiLabel)
+
+      // Emblem hover (kept because it’s few sprites)
+      for (const tier in tierSprites) {
+        const sprite = tierSprites[tier]
+        sprite.on('pointerover', (e) => {
+          const { x, y } = e.global
+          uiLabel.text = tier
+          uiLabel.x = x + 10
+          uiLabel.y = y - 10
+          uiLabel.visible = true
+
+          const padding = 4
+          const b = uiLabel.getLocalBounds()
+          uiLabelBg.clear()
+          uiLabelBg.beginFill(0x000000, 0.7)
+          uiLabelBg.drawRoundedRect(
+            uiLabel.x - padding,
+            uiLabel.y - padding,
+            b.width + padding * 2,
+            b.height + padding * 2,
+            4
+          )
+          uiLabelBg.endFill()
+          uiLabelBg.visible = true
+        })
+        sprite.on('pointermove', (e) => {
+          const { x, y } = e.global
+          uiLabel.x = x + 10
+          uiLabel.y = y - 10
+          const padding = 4
+          const b = uiLabel.getLocalBounds()
+          uiLabelBg.clear()
+          uiLabelBg.beginFill(0x000000, 0.7)
+          uiLabelBg.drawRoundedRect(
+            uiLabel.x - padding,
+            uiLabel.y - padding,
+            b.width + padding * 2,
+            b.height + padding * 2,
+            4
+          )
+          uiLabelBg.endFill()
+        })
+        sprite.on('pointerout', () => {
+          uiLabel.visible = false
+          uiLabelBg.visible = false
+        })
+      }
+
+      // ---- Animation: breathing + simple spring to center ring (no O(n²)) ----
+      const attraction = 0.01
+      const repulsion = 0.2
+      const targetR = exclusionRadius
+      const damping = 0.95
+
+      // light “breathing” centers
       app.ticker.add(() => {
-        // breathing des centres
         for (const key in clusterMotion) {
-          const motion = clusterMotion[key]
-          motion.angle += motion.speed
-          const offsetX = Math.cos(motion.angle) * 10
-          const offsetY = Math.sin(motion.angle * 0.8) * 10
-          const pos = tierPositions[key]
-          if (!pos) continue
-          pos.x = motion.baseX + offsetX
-          pos.y = motion.baseY + offsetY
+          const m = clusterMotion[key]
+          m.angle += m.speed
+          const ox = Math.cos(m.angle) * 10
+          const oy = Math.sin(m.angle * 0.8) * 10
+          const p = tierPositions[key]
+          if (!p) continue
+          p.x = m.baseX + ox
+          p.y = m.baseY + oy
         }
 
-        // suivre les centres pour les emblèmes
+        // move emblems to their centers
         for (const tier in tierSprites) {
-          const sprite = tierSprites[tier]
-          const center = tierPositions[tier]
-          sprite.x = center.x - sprite.width / 2
-          sprite.y = center.y - sprite.height / 2
+          const spr = tierSprites[tier]
+          const c = tierPositions[tier]
+          spr.x = c.x - spr.width / 2
+          spr.y = c.y - spr.height / 2
         }
 
-        // Mise à jour des dots (attraction simple vers le cercle de rayon exclusionRadius)
-        const attraction = 0.01
-        const repulsion = 0.2
-        const minDist = exclusionRadius
-
+        // update dots — no pairwise checks, only relation to its tier center
         for (const tier in tierDots) {
           const arr = tierDots[tier]
-          const center = tierPositions[tier]
+          const c = tierPositions[tier]
           for (let i = 0; i < arr.length; i++) {
             const d = arr[i].dot
-            const dx = center.x - d.x
-            const dy = center.y - d.y
+            const dx = c.x - d.x
+            const dy = c.y - d.y
             const dist = Math.hypot(dx, dy) || 1
 
-            if (dist > minDist + 5) {
+            if (dist > targetR + 5) {
               d.vx += (dx / dist) * attraction
               d.vy += (dy / dist) * attraction
-            } else if (dist < minDist) {
+            } else if (dist < targetR) {
               d.vx -= (dx / dist) * repulsion
               d.vy -= (dy / dist) * repulsion
             }
 
-            // NOTE: on a retiré la collision O(n²) entre dots → énorme gain
-            d.vx *= 0.95
-            d.vy *= 0.95
+            d.vx *= damping
+            d.vy *= damping
             d.x += d.vx
             d.y += d.vy
           }
         }
+      })
+
+      // small viewport skew just like you had
+      let angle = 0
+      app.ticker.add(() => {
+        angle += 0.01
+        const dx = Math.cos(angle) * 0.01
+        const dy = Math.sin(angle) * 0.01
+        viewport.skew.set(dx, dy)
       })
 
       return () => {}
